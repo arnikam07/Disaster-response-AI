@@ -167,16 +167,15 @@ class DisasterResponseAI:
                 st.info(f"Your team is active. See dashboard for assignments.")
                     
         elif role == "emergency_coordinator":
-            col1, col2, col3 = st.columns(3)
+            ## --- MODIFIED: Removed 'Allocate Volunteers' button ---
+            col1, col2 = st.columns(2)
             with col1:
                 if st.button("System Status", use_container_width=True):
                     self.show_system_status()
             with col2:
-                if st.button("Allocate Volunteers", use_container_width=True):
-                    self.allocate_volunteers()
-            with col3:
                 if st.button("Send Alert", use_container_width=True):
                     self.send_emergency_alert()
+            ## --- END MODIFIED ---
         
         elif role == "hospital_coordinator":
             st.info("Your role is to monitor incoming patients and hospital capacity.")
@@ -190,19 +189,15 @@ class DisasterResponseAI:
             for alert in st.session_state.alerts[-3:]: # Show top 3
                 st.error(f"⚠ {alert}")
 
-    ## --- NEW: Function for citizens to see ONLY official alerts ---
     def render_broadcast_alerts(self):
         """Displays only OFFICIAL broadcast alerts for citizens."""
-        # Filter for official alerts
         official_alerts = [a for a in st.session_state.alerts if a.startswith("OFFICIAL ALERT:")]
         
         if official_alerts:
             st.warning("Official Broadcasts:")
-            for alert in official_alerts[-3:]: # Show top 3
-                # Clean up the message
+            for alert in official_alerts[-3:]: 
                 alert_message = alert.replace("OFFICIAL ALERT: ", "")
                 st.error(f"⚠ {alert_message}")
-    ## --- END NEW ---
 
     def render_dashboard(self):
         """Render role-specific dashboard"""
@@ -224,9 +219,7 @@ class DisasterResponseAI:
     def render_citizen_dashboard(self):
         """Render dashboard for citizens"""
         
-        ## --- MODIFIED: Replaced general alert box with specific one ---
         self.render_broadcast_alerts()
-        ## --- END MODIFIED ---
         
         if st.session_state.sos_sent_message:
             st.success(st.session_state.sos_sent_message)
@@ -465,6 +458,7 @@ class DisasterResponseAI:
                 patient['priority'] = new_priority
                 break
 
+    ## --- MODIFIED: Fixed the Volunteer Allocation button/display logic ---
     def render_ai_coordination(self):
         """Render AI coordination panel for emergency coordinators"""
         if st.session_state.user_role not in ["emergency_coordinator"]:
@@ -480,21 +474,36 @@ class DisasterResponseAI:
             
             st.write("*Manage Available Resources:*")
             
-            st.metric("Medical Kits", st.session_state.resource_status['medical_kits'])
-            st.metric("Transport Vehicles", st.session_state.resource_status['transport'])
-            st.metric("Rescue Equipment", st.session_state.resource_status['equipment']) 
+            res = st.session_state.resource_status
+            c1, c2 = st.columns(2)
+            c1.metric("Medical Kits", res['medical_kits'])
+            c2.metric("Food Supplies", res['food_supplies'])
+            c1.metric("Water", res['water'])
+            c2.metric("Rescue Equipment", res['equipment'])
+            c1.metric("Transport Vehicles", res['transport'])
+            c2.metric("Communication", res['communication'])
+            c1.metric("Power Units", res['power'])
+
             
             st.subheader("Add Resources")
             add_kits = st.number_input("Add Medical Kits", 0, 100, 0)
-            add_transport = st.number_input("Add Transport Vehicles", 0, 20, 0)
+            add_food = st.number_input("Add Food Supplies", 0, 100, 0)
+            add_water = st.number_input("Add Water Units", 0, 100, 0)
             add_equip = st.number_input("Add Rescue Equipment", 0, 50, 0) 
+            add_transport = st.number_input("Add Transport Vehicles", 0, 20, 0)
+            add_comm = st.number_input("Add Communication Devices", 0, 20, 0)
+            add_power = st.number_input("Add Power Units", 0, 20, 0)
             
             if st.button("Add Resources"):
-                st.session_state.resource_status['medical_kits'] += add_kits
-                st.session_state.resource_status['transport'] += add_transport
-                st.session_state.resource_status['equipment'] += add_equip 
+                res['medical_kits'] += add_kits
+                res['food_supplies'] += add_food
+                res['water'] += add_water
+                res['equipment'] += add_equip 
+                res['transport'] += add_transport
+                res['communication'] += add_comm
+                res['power'] += add_power
                 st.success("Resources added!")
-                st.rerun()
+                st.rerun() # Rerun here is OK, just updates the metrics
             
             st.info("Volunteer Allocation")
             
@@ -518,26 +527,37 @@ class DisasterResponseAI:
                     zone_demands, available_resources
                 )
                 st.session_state.volunteer_allocation = allocation
-                st.success("Volunteer allocation optimized!")
+                st.success("👥 Volunteers allocated optimally!")
                 
                 allocated_rescue = 0
                 if allocation:
                     for zone, skills in allocation.items():
-                        total_volunteers = sum(skills.values())
-                        if total_volunteers > 0:
-                            st.write(f"{zone} Zone:** {total_volunteers} volunteers")
+                        for skill, count in skills.items():
+                            if skill == 'rescue':
+                                allocated_rescue += count
+                
+                if allocated_rescue > 0:
+                    st.session_state.resource_status['equipment'] -= allocated_rescue
+                    st.warning(f"Depleted {allocated_rescue} rescue equipment units for this allocation.")
+                    st.rerun() # Rerun to update the resource metrics
+            
+            # --- THIS IS THE FIX ---
+            # Display logic is now OUTSIDE the button and complete
+            if st.session_state.volunteer_allocation:
+                st.subheader("Current Allocation:")
+                allocation = st.session_state.volunteer_allocation
+                for zone, skills in allocation.items():
+                    total_volunteers = sum(skills.values())
+                    if total_volunteers > 0:
+                        st.write(f"**{zone} Zone:** {total_volunteers} volunteers")
+                        with st.expander("View Details"):
                             for skill, count in skills.items():
                                 if count > 0:
                                     st.write(f"  - {skill.title()}: {count}")
-                                    if skill == 'rescue':
-                                        allocated_rescue += count
-                        else:
-                            st.write(f"{zone} Zone:** No volunteers assigned")
-
-                    st.session_state.resource_status['equipment'] -= allocated_rescue
-                    st.warning(f"Depleted {allocated_rescue} rescue equipment units for this allocation.")
-                    st.rerun()
-
+                    else:
+                        st.write(f"**{zone} Zone:** No volunteers assigned")
+            # --- END FIX ---
+            
         with col2:
             st.info("AI SOS Alert Triage")
             st.write("This panel tracks incoming SOS alerts and dispatches.")
@@ -552,6 +572,7 @@ class DisasterResponseAI:
                     st.write(f"- SOS from {alert['zone']} at {alert['position']}. **Status: {status}**")
             else:
                 st.success("No active SOS alerts.")
+    ## --- END MODIFIED ---
 
     def render_quick_status(self):
         """Render quick status panel"""
@@ -559,7 +580,7 @@ class DisasterResponseAI:
         
         scenario = st.session_state.scenario
         active_victims = len([v for v in scenario.victims if not v.get('rescued', False)])
-        rescued_victims = len([v for v in scenario.victims if v.get('rescued', False)])
+        rescued_victims = len([v for v in scenario.victims if v.get('rescued',False)])
         
         st.write(f"*Disaster:* {scenario.scenario_type}")
         st.write(f"*Active Victims (Inital + SOS):* {active_victims}")
@@ -947,45 +968,10 @@ class DisasterResponseAI:
         st.success("Report sent to hospital coordinator and bed reserved!")
         st.rerun()
 
-    def allocate_volunteers(self):
-        """Allocate volunteers to zones"""
-        zone_demands = {
-            'Northwest': {'urgency': 0.8, 'skills': {'medical': 3, 'rescue': 2, 'logistics': 1, 'communication': 1}},
-            'Northeast': {'urgency': 0.6, 'skills': {'medical': 2, 'rescue': 1, 'logistics': 2, 'communication': 2}},
-            'Southwest': {'urgency': 0.9, 'skills': {'medical': 4, 'rescue': 3, 'logistics': 1, 'communication': 1}},
-            'Southeast': {'urgency': 0.7, 'skills': {'medical': 2, 'rescue': 2, 'logistics': 2, 'communication': 2}}
-        }
-        
-        available_resources = {
-            'Northwest': st.session_state.resource_status,
-            'Northeast': st.session_state.resource_status,
-            'Southwest': st.session_state.resource_status,
-            'Southeast': st.session_state.resource_status
-        }
-        
-        allocation = st.session_state.scenario.optimize_volunteer_allocation(
-            zone_demands, available_resources
-        )
-        st.session_state.volunteer_allocation = allocation
-        st.success("👥 Volunteers allocated optimally!")
-        
-        allocated_rescue = 0
-        if allocation:
-            for zone, skills in allocation.items():
-                total_volunteers = sum(skills.values())
-                if total_volunteers > 0:
-                    st.write(f"{zone} Zone:** {total_volunteers} volunteers")
-                    for skill, count in skills.items():
-                        if count > 0:
-                            st.write(f"  - {skill.title()}: {count}")
-                            if skill == 'rescue':
-                                allocated_rescue += count
-                else:
-                    st.write(f"{zone} Zone:** No volunteers assigned")
-
-            st.session_state.resource_status['equipment'] -= allocated_rescue
-            st.warning(f"Depleted {allocated_rescue} rescue equipment units for this allocation.")
-            st.rerun()
+    ## --- DELETED: This function is no longer needed ---
+    # def allocate_volunteers(self):
+    #     ...
+    ## --- END DELETED ---
 
     def show_system_status(self):
         """Show system status"""
